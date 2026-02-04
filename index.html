@@ -3,131 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MeasureBox - AI ダンボール計測</title>
+    <title>MeasureBox Pro</title>
     <style>
-        /* 全体設定 */
         body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-            margin: 0; 
-            background: #1C1C1E; /* ダークモードの背景色 */
-            color: #E5E5EA; /* ダークモードの文字色 */
-            text-align: center; 
-            overflow: hidden; 
-            -webkit-touch-callout: none; /* iOS長押し禁止 */
-            -webkit-user-select: none;   /* iOS選択禁止 */
+            font-family: -apple-system, sans-serif;
+            margin: 0; background: #000; color: #fff; 
+            text-align: center; overflow: hidden; 
         }
-        
-        /* UIレイヤー */
         #ui-layer { 
-            position: fixed; 
-            top: 0; 
-            width: 100%; 
-            background: rgba(28,28,30,0.8); /* 半透明の背景 */
-            backdrop-filter: blur(10px); /* ぼかし効果 */
-            -webkit-backdrop-filter: blur(10px); /* Safari対応 */
-            padding: 15px 0; 
-            z-index: 10; 
-            box-shadow: 0 2px 10px rgba(0,0,0,0.3); /* 影を強調 */
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+            position: fixed; top: 0; width: 100%; 
+            background: rgba(28,28,30,0.85); backdrop-filter: blur(15px);
+            padding: 20px 0; z-index: 10;
         }
-
-        /* 命令文 */
-        #instruction {
-            font-size: 1.1em;
-            font-weight: 500;
-            margin-bottom: 10px;
-            color: #F2F2F7;
-        }
-
-        /* ボタン群のコンテナ */
-        #button-container {
-            display: flex;
-            justify-content: center;
-            gap: 10px; /* ボタン間のスペース */
-        }
-
-        /* ボタンのスタイル */
+        #instruction { font-size: 14px; color: #0A84FF; margin-bottom: 8px; font-weight: bold; }
+        #result { font-size: 24px; font-weight: bold; color: #FF9F0A; min-height: 30px; }
+        .btn-group { margin-top: 15px; }
         .btn { 
-            background: #3A3A3C; /* ボタンの背景色 */
-            color: #FFFFFF; /* ボタンの文字色 */
-            border: none; 
-            padding: 10px 18px; 
-            border-radius: 10px; /* 角を丸く */
-            font-size: 1em; 
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.2s ease;
-            -webkit-appearance: none; /* iOSのデフォルトスタイルをリセット */
+            background: #3A3A3C; color: #fff; border: none; padding: 10px 20px; 
+            border-radius: 12px; font-weight: 600; margin: 0 5px;
         }
-        .btn:active {
-            background: #555557; /* タップ時の色 */
-        }
-        .btn-primary {
-            background: #0A84FF; /* メインボタンの色 */
-        }
-        .btn-primary:active {
-            background: #329AFF;
-        }
-
-        /* ファイル入力は非表示 */
-        #file-input { display:none; }
-
-        /* 計測結果表示 */
-        #result { 
-            font-weight: 600; 
-            color: #FF9F0A; /* アクセントカラー */
-            font-size: 1.2em;
-            margin-top: 10px;
-        }
-
-        /* キャンバスコンテナ */
-        #canvas-container { 
-            margin-top: 150px; /* UIレイヤーの高さに合わせて調整 */
-            position: relative; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; /* 垂直方向も中央揃え */
-            height: calc(100vh - 150px); /* 残りの画面高さを利用 */
-        }
-        
-        /* キャンバス */
-        canvas { 
-            max-width: 100%; 
-            max-height: 100%; /* 画面に収まるように */
-            width: auto;
-            height: auto;
-            border: 1px solid #48484A; /* 控えめな枠線 */
-            background: #000; /* 画像がない時は黒 */
-            touch-action: none; 
-            display: block; /* 余白をなくす */
-        }
-
-        /* iPadなどの横向き対応 */
-        @media (orientation: landscape) {
-            #canvas-container {
-                margin-top: 110px; /* 横向き時はUIがコンパクトになるため調整 */
-                height: calc(100vh - 110px);
-            }
-        }
+        .btn-primary { background: #0A84FF; }
+        canvas { touch-action: none; margin-top: 160px; max-width: 100%; }
     </style>
 </head>
 <body>
 
 <div id="ui-layer">
     <div id="instruction">写真を選択してください</div>
-    <div id="button-container">
-        <input type="file" id="file-input" accept="image/*">
-        <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">写真を選択</button>
-        <button class="btn" onclick="resetAll()">やり直し</button>
-    </div>
     <div id="result"></div>
+    <div class="btn-group">
+        <input type="file" id="file-input" accept="image/*" style="display:none">
+        <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">写真を選択</button>
+        <button class="btn" onclick="resetAll()">リセット</button>
+    </div>
 </div>
 
-<div id="canvas-container">
-    <canvas id="canvas"></canvas>
-</div>
+<canvas id="canvas"></canvas>
 
 <script>
 const canvas = document.getElementById('canvas');
@@ -138,119 +49,85 @@ const resultDiv = document.getElementById('result');
 
 let img = new Image();
 let points = [];
-let ratio = 0; // 1ピクセルあたりのmm
-const CARD_LONG_SIDE_MM = 85.6; // クレジットカードの長い方の辺
-
-// スケール調整用の変数
-let currentImageScale = 1; 
-let currentImageOffsetX = 0;
-let currentImageOffsetY = 0;
+let ratio = 0; 
+const CARD_MM = 85.6;
 
 fileInput.onchange = (e) => {
     const file = e.target.files[0];
     const reader = new FileReader();
     reader.onload = (event) => {
         img.onload = () => {
-            // 画像のアスペクト比を維持しつつ、画面にフィットさせる
-            const maxCanvasWidth = window.innerWidth;
-            const maxCanvasHeight = window.innerHeight - document.getElementById('ui-layer').offsetHeight - 20; // UI分と余白を引く
-
-            let scale = Math.min(maxCanvasWidth / img.width, maxCanvasHeight / img.height);
-            
-            canvas.width = img.width * scale;
+            const scale = window.innerWidth / img.width;
+            canvas.width = window.innerWidth;
             canvas.height = img.height * scale;
-            
-            currentImageScale = scale;
-            currentImageOffsetX = (maxCanvasWidth - canvas.width) / 2;
-            currentImageOffsetY = (maxCanvasHeight - canvas.height) / 2;
-
-            drawCanvas(); // 初期描画
-            instruction.innerText = "手順2: カードの「長い辺」の端と端をタップ（2点）";
+            ratio = 0; // 初期化
+            points = [];
+            render();
+            instruction.innerText = "【基準設定】カードの長い辺の両端をタップ";
+            resultDiv.innerText = "";
         };
         img.src = event.target.result;
     };
     reader.readAsDataURL(file);
 };
 
-// キャンバス再描画関数
-function drawCanvas() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height); // キャンバスをクリア
-    if (img.src) {
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    }
-
-    // これまでに打った点を描画
-    points.forEach(p => {
-        ctx.fillStyle = "red";
+function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    
+    // 点と線の描画
+    points.forEach((p, i) => {
+        ctx.fillStyle = ratio === 0 ? "#FF3B30" : "#0A84FF"; 
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
         ctx.fill();
+        
+        if (i === 1) {
+            ctx.strokeStyle = ratio === 0 ? "#FF3B30" : "#0A84FF";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            ctx.lineTo(points[1].x, points[1].y);
+            ctx.stroke();
+        }
     });
-
-    // 測定中の線を描画
-    if (points.length === 2 && ratio > 0) {
-        ctx.strokeStyle = "#0A84FF"; // 青系の色
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, points[0].y);
-        ctx.lineTo(points[1].x, points[1].y);
-        ctx.stroke();
-    }
 }
 
 canvas.addEventListener('pointerdown', (e) => {
     if (!img.src) return;
-    
-    // タップ位置をキャンバス座標に変換
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    
+
+    if (points.length >= 2) points = []; // 3点目が打たれたら前のペアを消す
     points.push({x, y});
-    drawCanvas(); // 点が追加されたら再描画
+    render();
 
     if (points.length === 2) {
+        const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+        
         if (ratio === 0) {
-            // カードの基準を計算
-            const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
-            ratio = CARD_LONG_SIDE_MM / dist;
-            
-            resultDiv.innerText = `カード認識完了！ ${CARD_LONG_SIDE_MM}mm基準`;
-            instruction.innerText = "手順3: 測りたい辺の端と端をタップ";
-            
-            // カードの線は残しつつ、次の計測のために点をリセット
-            // ここでは点を消さずに線を残すため、pointsはクリアせず、次の測定で上書きする形にします。
-            // 実際にはもっと複雑なUIが必要ですが、今回はシンプルに。
-            // drawCanvas()で点を描画しているので、ここでは特に何もしない。
+            // ステップ1: 基準決定
+            ratio = CARD_MM / dist;
+            instruction.innerText = "【計測モード】測りたい辺をタップ";
+            resultDiv.innerText = "基準完了";
+            // 基準の線を見せるために少し待ってから消す
+            setTimeout(() => { points = []; render(); }, 800);
         } else {
-            // ダンボールの長さを計算
-            const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
-            const mm = dist * ratio;
-            const cm = (mm / 10).toFixed(1);
-            
-            resultDiv.innerText = `計測結果: 約 ${cm} cm`;
-            
-            // 測定完了後、次の計測のために点をリセット
-            points = []; 
+            // ステップ2: 実測
+            const cm = ((dist * ratio) / 10).toFixed(1);
+            resultDiv.innerText = cm + " cm";
         }
     }
 });
 
 function resetAll() {
-    points = [];
     ratio = 0;
-    drawCanvas(); // キャンバスをクリアして再描画
-    instruction.innerText = "手順2: カードの「長い辺」の端と端をタップ";
+    points = [];
+    render();
+    instruction.innerText = "【基準設定】カードの長い辺の両端をタップ";
     resultDiv.innerText = "";
 }
-
-// 画面サイズ変更時にもキャンバスを調整（スマホではあまり起きないが念のため）
-window.addEventListener('resize', () => {
-    if (img.src) {
-        img.onload(); // 画像を再ロードしてキャンバスサイズを調整
-    }
-});
 </script>
-
 </body>
 </html>
