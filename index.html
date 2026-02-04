@@ -45,4 +45,212 @@
         #button-container {
             display: flex;
             justify-content: center;
-            gap: 10px; /* ボタン
+            gap: 10px; /* ボタン間のスペース */
+        }
+
+        /* ボタンのスタイル */
+        .btn { 
+            background: #3A3A3C; /* ボタンの背景色 */
+            color: #FFFFFF; /* ボタンの文字色 */
+            border: none; 
+            padding: 10px 18px; 
+            border-radius: 10px; /* 角を丸く */
+            font-size: 1em; 
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            -webkit-appearance: none; /* iOSのデフォルトスタイルをリセット */
+        }
+        .btn:active {
+            background: #555557; /* タップ時の色 */
+        }
+        .btn-primary {
+            background: #0A84FF; /* メインボタンの色 */
+        }
+        .btn-primary:active {
+            background: #329AFF;
+        }
+
+        /* ファイル入力は非表示 */
+        #file-input { display:none; }
+
+        /* 計測結果表示 */
+        #result { 
+            font-weight: 600; 
+            color: #FF9F0A; /* アクセントカラー */
+            font-size: 1.2em;
+            margin-top: 10px;
+        }
+
+        /* キャンバスコンテナ */
+        #canvas-container { 
+            margin-top: 150px; /* UIレイヤーの高さに合わせて調整 */
+            position: relative; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; /* 垂直方向も中央揃え */
+            height: calc(100vh - 150px); /* 残りの画面高さを利用 */
+        }
+        
+        /* キャンバス */
+        canvas { 
+            max-width: 100%; 
+            max-height: 100%; /* 画面に収まるように */
+            width: auto;
+            height: auto;
+            border: 1px solid #48484A; /* 控えめな枠線 */
+            background: #000; /* 画像がない時は黒 */
+            touch-action: none; 
+            display: block; /* 余白をなくす */
+        }
+
+        /* iPadなどの横向き対応 */
+        @media (orientation: landscape) {
+            #canvas-container {
+                margin-top: 110px; /* 横向き時はUIがコンパクトになるため調整 */
+                height: calc(100vh - 110px);
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div id="ui-layer">
+    <div id="instruction">写真を選択してください</div>
+    <div id="button-container">
+        <input type="file" id="file-input" accept="image/*">
+        <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">写真を選択</button>
+        <button class="btn" onclick="resetAll()">やり直し</button>
+    </div>
+    <div id="result"></div>
+</div>
+
+<div id="canvas-container">
+    <canvas id="canvas"></canvas>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const fileInput = document.getElementById('file-input');
+const instruction = document.getElementById('instruction');
+const resultDiv = document.getElementById('result');
+
+let img = new Image();
+let points = [];
+let ratio = 0; // 1ピクセルあたりのmm
+const CARD_LONG_SIDE_MM = 85.6; // クレジットカードの長い方の辺
+
+// スケール調整用の変数
+let currentImageScale = 1; 
+let currentImageOffsetX = 0;
+let currentImageOffsetY = 0;
+
+fileInput.onchange = (e) => {
+    const file = e.target.files[0];
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        img.onload = () => {
+            // 画像のアスペクト比を維持しつつ、画面にフィットさせる
+            const maxCanvasWidth = window.innerWidth;
+            const maxCanvasHeight = window.innerHeight - document.getElementById('ui-layer').offsetHeight - 20; // UI分と余白を引く
+
+            let scale = Math.min(maxCanvasWidth / img.width, maxCanvasHeight / img.height);
+            
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            
+            currentImageScale = scale;
+            currentImageOffsetX = (maxCanvasWidth - canvas.width) / 2;
+            currentImageOffsetY = (maxCanvasHeight - canvas.height) / 2;
+
+            drawCanvas(); // 初期描画
+            instruction.innerText = "手順2: カードの「長い辺」の端と端をタップ（2点）";
+        };
+        img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+};
+
+// キャンバス再描画関数
+function drawCanvas() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height); // キャンバスをクリア
+    if (img.src) {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    }
+
+    // これまでに打った点を描画
+    points.forEach(p => {
+        ctx.fillStyle = "red";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    // 測定中の線を描画
+    if (points.length === 2 && ratio > 0) {
+        ctx.strokeStyle = "#0A84FF"; // 青系の色
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        ctx.lineTo(points[1].x, points[1].y);
+        ctx.stroke();
+    }
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+    if (!img.src) return;
+    
+    // タップ位置をキャンバス座標に変換
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    points.push({x, y});
+    drawCanvas(); // 点が追加されたら再描画
+
+    if (points.length === 2) {
+        if (ratio === 0) {
+            // カードの基準を計算
+            const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+            ratio = CARD_LONG_SIDE_MM / dist;
+            
+            resultDiv.innerText = `カード認識完了！ ${CARD_LONG_SIDE_MM}mm基準`;
+            instruction.innerText = "手順3: 測りたい辺の端と端をタップ";
+            
+            // カードの線は残しつつ、次の計測のために点をリセット
+            // ここでは点を消さずに線を残すため、pointsはクリアせず、次の測定で上書きする形にします。
+            // 実際にはもっと複雑なUIが必要ですが、今回はシンプルに。
+            // drawCanvas()で点を描画しているので、ここでは特に何もしない。
+        } else {
+            // ダンボールの長さを計算
+            const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+            const mm = dist * ratio;
+            const cm = (mm / 10).toFixed(1);
+            
+            resultDiv.innerText = `計測結果: 約 ${cm} cm`;
+            
+            // 測定完了後、次の計測のために点をリセット
+            points = []; 
+        }
+    }
+});
+
+function resetAll() {
+    points = [];
+    ratio = 0;
+    drawCanvas(); // キャンバスをクリアして再描画
+    instruction.innerText = "手順2: カードの「長い辺」の端と端をタップ";
+    resultDiv.innerText = "";
+}
+
+// 画面サイズ変更時にもキャンバスを調整（スマホではあまり起きないが念のため）
+window.addEventListener('resize', () => {
+    if (img.src) {
+        img.onload(); // 画像を再ロードしてキャンバスサイズを調整
+    }
+});
+</script>
+
+</body>
+</html>
