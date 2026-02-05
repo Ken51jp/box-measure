@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MeasureBox Pro + Loupe</title>
+    <title>MeasureBox Pro - 3辺計測</title>
     <style>
         body { 
             font-family: -apple-system, sans-serif;
@@ -13,25 +13,47 @@
         #ui-layer { 
             position: fixed; top: 0; width: 100%; 
             background: rgba(28,28,30,0.9); backdrop-filter: blur(20px);
-            padding: 20px 0; z-index: 100;
+            padding: 15px 0; z-index: 100;
         }
-        #instruction { font-size: 13px; color: #0A84FF; margin-bottom: 5px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
-        #result { font-size: 28px; font-weight: 300; color: #FF9F0A; min-height: 35px; }
-        .btn-group { margin-top: 15px; }
+        #instruction { font-size: 13px; color: #0A84FF; margin-bottom: 5px; font-weight: bold; letter-spacing: 1px; }
+        #result { font-size: 24px; font-weight: bold; color: #FF9F0A; min-height: 30px; }
+        
+        /* 計測リストのスタイル */
+        #measure-list {
+            background: rgba(44,44,46,0.8);
+            margin: 10px 20px;
+            padding: 10px;
+            border-radius: 12px;
+            display: flex;
+            justify-content: space-around;
+            font-size: 14px;
+        }
+        .measure-item { display: flex; flex-direction: column; }
+        .measure-val { font-size: 18px; font-weight: bold; color: #fff; }
+
+        .btn-group { margin-top: 10px; }
         .btn { 
-            background: #3A3A3C; color: #fff; border: none; padding: 12px 24px; 
-            border-radius: 14px; font-weight: 600; margin: 0 5px; font-size: 14px;
+            background: #3A3A3C; color: #fff; border: none; padding: 10px 20px; 
+            border-radius: 12px; font-weight: 600; margin: 0 5px; font-size: 13px;
         }
         .btn-primary { background: #0A84FF; }
-        #canvas-container { position: relative; margin-top: 160px; touch-action: none; }
-        canvas { max-width: 100%; cursor: crosshair; }
+        #canvas-container { position: relative; margin-top: 190px; touch-action: none; }
+        canvas { max-width: 100%; }
     </style>
 </head>
 <body>
 
 <div id="ui-layer">
     <div id="instruction">写真を選択してください</div>
-    <div id="result"></div>
+    <div id="result">READY</div>
+    
+    <div id="measure-list">
+        <div class="measure-item"><span>幅</span><span id="val-w" class="measure-val">-</span></div>
+        <div class="measure-item"><span>奥行</span><span id="val-d" class="measure-val">-</span></div>
+        <div class="measure-item"><span>高さ</span><span id="val-h" class="measure-val">-</span></div>
+        <div class="measure-item"><span>合計</span><span id="val-total" class="measure-val" style="color:#FF9F0A">-</span></div>
+    </div>
+
     <div class="btn-group">
         <input type="file" id="file-input" accept="image/*" style="display:none">
         <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">写真を選択</button>
@@ -55,11 +77,14 @@ let points = [];
 let ratio = 0; 
 const CARD_MM = 85.6;
 
-// ルーペ用設定
+// 3辺計測用データ
+let measurements = []; // [幅, 奥行, 高さ]
+const labels = ["幅 (Width)", "奥行 (Depth)", "高さ (Height)"];
+
 let isPressing = false;
 let currentPos = { x: 0, y: 0 };
-const LOUPE_SIZE = 120; // ルーペの直径
-const ZOOM_LEVEL = 3;   // 拡大倍率
+const LOUPE_SIZE = 130;
+const ZOOM_LEVEL = 3;
 
 fileInput.onchange = (e) => {
     const file = e.target.files[0];
@@ -69,11 +94,9 @@ fileInput.onchange = (e) => {
             const scale = window.innerWidth / img.width;
             canvas.width = window.innerWidth;
             canvas.height = img.height * scale;
-            ratio = 0;
-            points = [];
+            resetData();
             render();
-            instruction.innerText = "【手順1】カードの長い辺をタップ";
-            resultDiv.innerText = "READY";
+            instruction.innerText = "【基準設定】カードの長い辺をタップ";
         };
         img.src = event.target.result;
     };
@@ -84,85 +107,44 @@ function render() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (img.src) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     
-    // 計測ラインの描画
+    // 現在計測中の線
     if (points.length > 0) {
         ctx.strokeStyle = ratio === 0 ? "#FF3B30" : "#0A84FF";
         ctx.fillStyle = ctx.strokeStyle;
-        ctx.lineWidth = 2;
-
+        ctx.lineWidth = 3;
         points.forEach((p, i) => {
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2); ctx.fill();
             if (i === 1) {
-                ctx.beginPath();
-                ctx.moveTo(points[0].x, points[0].y);
-                ctx.lineTo(points[1].x, points[1].y);
-                ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y); ctx.lineTo(points[1].x, points[1].y); ctx.stroke();
             }
         });
     }
 
-    // ルーペの描画
-    if (isPressing && img.src) {
-        drawLoupe();
-    }
+    if (isPressing && img.src) drawLoupe();
 }
 
 function drawLoupe() {
     const lX = currentPos.x;
     const lY = currentPos.y;
-    const offsetY = 80; // 指の上に表示するためのオフセット
-
+    const offsetY = 90;
     ctx.save();
-    
-    // ルーペの枠線と影
     ctx.beginPath();
     ctx.arc(lX, lY - offsetY, LOUPE_SIZE / 2, 0, Math.PI * 2);
     ctx.strokeStyle = "#fff";
     ctx.lineWidth = 3;
     ctx.stroke();
-    ctx.clip(); // 円形で切り抜き
-
-    // 拡大された画像を描画
-    // drawImage(source, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight)
+    ctx.clip();
     const sSize = LOUPE_SIZE / ZOOM_LEVEL;
-    ctx.drawImage(
-        canvas, 
-        lX - sSize / 2, lY - sSize / 2, sSize, sSize, // 元の場所
-        lX - LOUPE_SIZE / 2, lY - offsetY - LOUPE_SIZE / 2, LOUPE_SIZE, LOUPE_SIZE // 拡大表示場所
-    );
-
+    ctx.drawImage(canvas, lX - sSize / 2, lY - sSize / 2, sSize, sSize, lX - LOUPE_SIZE / 2, lY - offsetY - LOUPE_SIZE / 2, LOUPE_SIZE, LOUPE_SIZE);
     ctx.restore();
-
-    // センターの十字（狙いを定めやすくする）
-    ctx.beginPath();
-    ctx.strokeStyle = "rgba(255,255,255,0.8)";
-    ctx.lineWidth = 1;
-    ctx.moveTo(lX, lY - offsetY - 10);
-    ctx.lineTo(lX, lY - offsetY + 10);
-    ctx.moveTo(lX - 10, lY - offsetY);
-    ctx.lineTo(lX + 10, lY - offsetY);
-    ctx.stroke();
+    ctx.beginPath(); ctx.strokeStyle = "rgba(255,255,255,0.8)"; ctx.lineWidth = 1;
+    ctx.moveTo(lX, lY - offsetY - 10); ctx.lineTo(lX, lY - offsetY + 10);
+    ctx.moveTo(lX - 10, lY - offsetY); ctx.lineTo(lX + 10, lY - offsetY); ctx.stroke();
 }
 
-const handleStart = (e) => {
-    isPressing = true;
-    updatePos(e);
-    render();
-};
-
-const handleMove = (e) => {
-    if (!isPressing) return;
-    updatePos(e);
-    render();
-};
-
-const handleEnd = (e) => {
+const handleEnd = () => {
     if (!isPressing) return;
     isPressing = false;
-    
-    // 指を離した場所を確定点とする
     if (img.src) {
         if (points.length >= 2) points = [];
         points.push({ x: currentPos.x, y: currentPos.y });
@@ -171,17 +153,54 @@ const handleEnd = (e) => {
             const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
             if (ratio === 0) {
                 ratio = CARD_MM / dist;
-                instruction.innerText = "【手順2】測りたい辺をタップ";
-                resultDiv.innerText = "基準完了";
+                resultDiv.innerText = "基準OK";
+                updateInstruction();
                 setTimeout(() => { points = []; render(); }, 600);
             } else {
-                const cm = ((dist * ratio) / 10).toFixed(1);
-                resultDiv.innerText = cm + " cm";
+                const cm = parseFloat(((dist * ratio) / 10).toFixed(1));
+                measurements.push(cm);
+                updateList();
+                if (measurements.length < 3) {
+                    updateInstruction();
+                    setTimeout(() => { points = []; render(); }, 400);
+                } else {
+                    instruction.innerText = "全計測完了";
+                    resultDiv.innerText = "COMPLETED";
+                }
             }
         }
     }
     render();
 };
+
+function updateInstruction() {
+    if (measurements.length < 3) {
+        instruction.innerText = `【計測】${labels[measurements.length]} をタップ`;
+    }
+}
+
+function updateList() {
+    const ids = ["val-w", "val-d", "val-h"];
+    let total = 0;
+    measurements.forEach((m, i) => {
+        document.getElementById(ids[i]).innerText = m + "cm";
+        total += m;
+    });
+    if (measurements.length === 3) {
+        document.getElementById("val-total").innerText = total.toFixed(1) + "cm";
+    }
+}
+
+function resetData() {
+    ratio = 0; points = []; measurements = [];
+    document.getElementById("val-w").innerText = "-";
+    document.getElementById("val-d").innerText = "-";
+    document.getElementById("val-h").innerText = "-";
+    document.getElementById("val-total").innerText = "-";
+    resultDiv.innerText = "READY";
+}
+
+function resetAll() { resetData(); render(); instruction.innerText = "【基準設定】カードの長い辺をタップ"; }
 
 function updatePos(e) {
     const rect = canvas.getBoundingClientRect();
@@ -191,21 +210,12 @@ function updatePos(e) {
     currentPos.y = clientY - rect.top;
 }
 
-// イベント登録
-canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleStart(e); });
-canvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleMove(e); });
-canvas.addEventListener('touchend', (e) => { e.preventDefault(); handleEnd(e); });
-// PCテスト用
-canvas.addEventListener('mousedown', handleStart);
-canvas.addEventListener('mousemove', handleMove);
+canvas.addEventListener('touchstart', (e) => { e.preventDefault(); isPressing = true; updatePos(e); render(); });
+canvas.addEventListener('touchmove', (e) => { e.preventDefault(); updatePos(e); render(); });
+canvas.addEventListener('touchend', (e) => { e.preventDefault(); handleEnd(); });
+canvas.addEventListener('mousedown', (e) => { isPressing = true; updatePos(e); render(); });
+canvas.addEventListener('mousemove', (e) => { if(isPressing){ updatePos(e); render(); }});
 canvas.addEventListener('mouseup', handleEnd);
-
-function resetAll() {
-    ratio = 0; points = [];
-    render();
-    instruction.innerText = "【手順1】カードの長い辺をタップ";
-    resultDiv.innerText = "RESET";
-}
 </script>
 </body>
 </html>
