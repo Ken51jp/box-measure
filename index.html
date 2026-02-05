@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MeasureBox Pro - UI Fixed</title>
+    <title>MeasureBox Pro - Reliable Photo</title>
     <style>
         body { font-family: -apple-system, sans-serif; margin: 0; background: #000; color: #fff; text-align: center; overflow: hidden; }
         #ui-layer { position: fixed; top: 0; width: 100%; background: rgba(28,28,30,0.95); backdrop-filter: blur(20px); padding: 15px 0; z-index: 2000; }
@@ -19,11 +19,8 @@
         .measure-val { font-size: 18px; font-weight: bold; color: #fff; }
 
         .btn-group { display: flex; justify-content: center; gap: 8px; margin-top: 5px; }
-        .btn { background: #3A3A3C; color: #fff; border: none; padding: 12px 18px; border-radius: 12px; font-weight: 600; font-size: 14px; touch-action: manipulation; position: relative; }
-        .btn-primary { background: #0A84FF; overflow: hidden; }
-        
-        /* ファイル入力をボタン全体に被せる */
-        #file-input { position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10; }
+        .btn { background: #3A3A3C; color: #fff; border: none; padding: 12px 18px; border-radius: 12px; font-weight: 600; font-size: 14px; touch-action: manipulation; }
+        .btn-primary { background: #0A84FF; }
         
         #canvas-container { position: relative; margin-top: 240px; touch-action: none; width: 100%; z-index: 100; }
         canvas { max-width: 100%; display: block; margin: 0 auto; }
@@ -44,10 +41,8 @@
         <div class="measure-item"><span>高さ(H)</span><span id="val-h" class="measure-val">-</span></div>
     </div>
     <div class="btn-group">
-        <button class="btn btn-primary">
-            写真を選択
-            <input type="file" id="file-input" accept="image/*">
-        </button>
+        <input type="file" id="file-input" accept="image/*" style="display: none;">
+        <button class="btn btn-primary" onclick="openFilePicker()">写真を選択</button>
         <button class="btn" onclick="undo()">戻る</button>
         <button class="btn" onclick="resetAll()">リセット</button>
     </div>
@@ -73,6 +68,12 @@ let isPressing = false;
 let currentPos = { x: 0, y: 0 };
 const LOUPE_SIZE = 130;
 const ZOOM_LEVEL = 3;
+
+// --- 写真選択の起動を確実にする関数 ---
+function openFilePicker() {
+    vibrate('light');
+    fileInput.click();
+}
 
 function vibrate(type) {
     if (!("vibrate" in navigator)) return;
@@ -115,7 +116,6 @@ function setRef(mode) {
 }
 
 fileInput.addEventListener('change', (e) => {
-    vibrate('medium');
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
@@ -127,7 +127,7 @@ fileInput.addEventListener('change', (e) => {
             canvas.height = img.height * scale;
             resetData();
             render();
-            instruction.innerText = `【基準】${currentRefMode==='card'?'カード':'A4用紙'}の角をタップ`;
+            updateInstruction();
         };
         img.src = ev.target.result;
     };
@@ -166,4 +166,78 @@ function drawLoupe() {
     const lX = currentPos.x, lY = currentPos.y, off = 90;
     ctx.save();
     ctx.beginPath(); ctx.arc(lX, lY - off, LOUPE_SIZE/2, 0, Math.PI*2);
-    ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke(); ctx.clip();
+    const s = LOUPE_SIZE / ZOOM_LEVEL;
+    ctx.drawImage(canvas, lX-s/2, lY-s/2, s, s, lX-LOUPE_SIZE/2, lY-off-LOUPE_SIZE/2, LOUPE_SIZE, LOUPE_SIZE);
+    ctx.restore();
+    ctx.beginPath(); ctx.strokeStyle = "#0A84FF"; ctx.lineWidth = 2;
+    ctx.moveTo(lX, lY-off-15); ctx.lineTo(lX, lY-off+15); ctx.moveTo(lX-15, lY-off); ctx.lineTo(lX+15, lY-off); ctx.stroke();
+}
+
+const handleEnd = () => {
+    if (!isPressing) return;
+    isPressing = false;
+    if (img.src) {
+        const snapped = getSnappedPoint(currentPos.x, currentPos.y);
+        points.push(snapped);
+        vibrate('light');
+
+        if (points.length === 2) {
+            const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+            if (ratio === 0) {
+                ratio = REF_VALUES[currentRefMode] / dist;
+                vibrate('success');
+                setTimeout(() => { points = []; render(); updateInstruction(); }, 600);
+            } else {
+                measurements.push(parseFloat(((dist * ratio) / 10).toFixed(1)));
+                updateList();
+                if (measurements.length < 3) {
+                    updateInstruction();
+                    setTimeout(() => { points = []; render(); }, 400);
+                } else {
+                    instruction.innerText = "全計測完了"; vibrate('success');
+                }
+            }
+        }
+    }
+    render();
+};
+
+function updateInstruction() {
+    if (ratio === 0) {
+        instruction.innerText = `【基準】${currentRefMode==='card'?'カード':'A4用紙'}の長辺をタップ`;
+    } else if (measurements.length < 3) {
+        instruction.innerText = `【計測】${labels[measurements.length]}`;
+    }
+}
+
+function updateList() {
+    const ids = ["val-w", "val-d", "val-h"];
+    let total = 0;
+    ids.forEach((id, i) => {
+        const val = measurements[i] || "-";
+        document.getElementById(id).innerText = val + (val === "-" ? "" : "cm");
+        if (val !== "-") total += val;
+    });
+    resultDiv.innerText = measurements.length > 0 ? `3辺合計: ${total.toFixed(1)} cm` : "3辺合計: - cm";
+}
+
+function resetData() { ratio = 0; points = []; measurements = []; updateList(); }
+function resetAll() { vibrate('medium'); resetData(); render(); updateInstruction(); }
+
+function updatePos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const cX = e.touches ? e.touches[0].clientX : e.clientX;
+    const cY = e.touches ? e.touches[0].clientY : e.clientY;
+    currentPos.x = cX - rect.left; currentPos.y = cY - rect.top;
+}
+
+canvas.addEventListener('touchstart', (e) => { if(!img.src) return; e.preventDefault(); isPressing = true; updatePos(e); render(); });
+canvas.addEventListener('touchmove', (e) => { if(!img.src) return; e.preventDefault(); updatePos(e); render(); });
+canvas.addEventListener('touchend', (e) => { if(!img.src) return; e.preventDefault(); handleEnd(); });
+canvas.onmousedown = (e) => { if(!img.src) return; isPressing = true; updatePos(e); render(); };
+canvas.onmousemove = (e) => { if(isPressing){ updatePos(e); render(); } };
+canvas.onmouseup = handleEnd;
+</script>
+</body>
+</html>
