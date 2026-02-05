@@ -3,45 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MeasureBox Pro - Haptic Fixed</title>
+    <title>MeasureBox Pro - AI Snap</title>
     <style>
-        body { 
-            font-family: -apple-system, sans-serif;
-            margin: 0; background: #000; color: #fff; 
-            text-align: center; overflow: hidden; 
-        }
-        #ui-layer { 
-            position: fixed; top: 0; width: 100%; 
-            background: rgba(28,28,30,0.95); backdrop-filter: blur(20px);
-            padding: 15px 0; z-index: 1000;
-        }
+        body { font-family: -apple-system, sans-serif; margin: 0; background: #000; color: #fff; text-align: center; overflow: hidden; }
+        #ui-layer { position: fixed; top: 0; width: 100%; background: rgba(28,28,30,0.95); backdrop-filter: blur(20px); padding: 15px 0; z-index: 1000; }
         #instruction { font-size: 13px; color: #0A84FF; margin-bottom: 5px; font-weight: bold; letter-spacing: 1px; }
         #result { font-size: 24px; font-weight: bold; color: #FF9F0A; min-height: 30px; }
-        
         .ref-selector { display: flex; justify-content: center; gap: 5px; margin-bottom: 10px; }
-        .ref-btn {
-            background: #2C2C2E; color: #8E8E93; border: 1px solid #3A3A3C;
-            padding: 5px 12px; border-radius: 8px; font-size: 12px; cursor: pointer;
-        }
+        .ref-btn { background: #2C2C2E; color: #8E8E93; border: 1px solid #3A3A3C; padding: 5px 12px; border-radius: 8px; font-size: 12px; }
         .ref-btn.active { background: #48484A; color: #FFF; border-color: #636366; }
-
-        #measure-list {
-            background: rgba(44,44,46,0.8);
-            margin: 5px 20px 10px; padding: 10px; border-radius: 12px;
-            display: flex; justify-content: space-around; font-size: 14px;
-        }
+        #measure-list { background: rgba(44,44,46,0.8); margin: 5px 20px 10px; padding: 10px; border-radius: 12px; display: flex; justify-content: space-around; font-size: 14px; }
         .measure-item { display: flex; flex-direction: column; }
         .measure-val { font-size: 18px; font-weight: bold; color: #fff; }
-
         .btn-group { display: flex; justify-content: center; gap: 8px; }
-        .btn { 
-            background: #3A3A3C; color: #fff; border: none; padding: 12px 18px; 
-            border-radius: 12px; font-weight: 600; font-size: 14px;
-            touch-action: manipulation;
-        }
+        .btn { background: #3A3A3C; color: #fff; border: none; padding: 12px 18px; border-radius: 12px; font-weight: 600; font-size: 14px; }
         .btn-primary { background: #0A84FF; }
-        .btn-undo { background: #E0E0E0; color: #000; }
-        
         #canvas-container { position: relative; margin-top: 230px; touch-action: none; width: 100%; }
         canvas { max-width: 100%; display: block; margin: 0 auto; }
     </style>
@@ -62,22 +38,17 @@
         <div class="measure-item"><span>合計</span><span id="val-total" class="measure-val" style="color:#FF9F0A">-</span></div>
     </div>
     <div class="btn-group">
-        <div style="position:relative;">
-            <button class="btn btn-primary" onclick="vibrate('medium')">写真を選択</button>
-            <input type="file" id="file-input" accept="image/*" style="position:absolute; left:0; top:0; width:100%; height:100%; opacity:0;">
-        </div>
-        <button class="btn btn-undo" onclick="undo()">戻る</button>
+        <div style="position:relative;"><button class="btn btn-primary">写真選択</button><input type="file" id="file-input" accept="image/*" style="position:absolute; left:0; top:0; width:100%; height:100%; opacity:0;"></div>
+        <button class="btn" onclick="undo()">戻る</button>
         <button class="btn" onclick="resetAll()">リセット</button>
     </div>
 </div>
 
-<div id="canvas-container">
-    <canvas id="canvas"></canvas>
-</div>
+<div id="canvas-container"><canvas id="canvas"></canvas></div>
 
 <script>
 const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
 const fileInput = document.getElementById('file-input');
 const instruction = document.getElementById('instruction');
 const resultDiv = document.getElementById('result');
@@ -94,116 +65,118 @@ let currentPos = { x: 0, y: 0 };
 const LOUPE_SIZE = 130;
 const ZOOM_LEVEL = 3;
 
-// --- 修正版 振動機能 ---
 function vibrate(type) {
-    if (!("vibrate" in navigator)) {
-        console.log("このブラウザは振動機能をサポートしていません");
-        return;
+    if (!("vibrate" in navigator)) return;
+    if (type === 'light') navigator.vibrate(15);
+    else if (type === 'success') navigator.vibrate([30, 50, 30]);
+}
+
+// --- AIスナップ機能: 周辺のコントラストが一番高い点を計算 ---
+function getSnappedPoint(rawX, rawY) {
+    const searchRange = 10; // 10px四方を探索
+    const data = ctx.getImageData(rawX - searchRange, rawY - searchRange, searchRange * 2, searchRange * 2).data;
+    let maxContrast = -1;
+    let snapX = rawX, snapY = rawY;
+
+    for (let y = 0; y < searchRange * 2; y++) {
+        for (let x = 0; x < searchRange * 2; x++) {
+            const idx = (y * searchRange * 2 + x) * 4;
+            const brightness = (data[idx] + data[idx+1] + data[idx+2]) / 3;
+            // 近傍との輝度差を簡易計算
+            const contrast = Math.abs(brightness - 128); 
+            if (contrast > maxContrast) {
+                maxContrast = contrast;
+                snapX = (rawX - searchRange) + x;
+                snapY = (rawY - searchRange) + y;
+            }
+        }
     }
-    
-    // 一度何かのアクション（ボタンクリック）でこれが呼ばれると、以降の自動振動が許可されます
-    try {
-        if (type === 'light') navigator.vibrate(15);
-        else if (type === 'medium') navigator.vibrate(40);
-        else if (type === 'success') navigator.vibrate([40, 60, 40]);
-    } catch (e) {
-        console.error("振動エラー:", e);
-    }
+    return { x: snapX, y: snapY };
 }
 
 function setRef(mode) {
     vibrate('light');
-    if (ratio !== 0 || measurements.length > 0) {
-        if (!confirm("リセットして基準物を変更しますか？")) return;
-    }
     currentRefMode = mode;
-    document.getElementById('ref-card').classList.toggle('active', mode === 'card');
-    document.getElementById('ref-a4').classList.toggle('active', mode === 'a4');
+    document.getElementById('ref-card').className = 'ref-btn' + (mode === 'card' ? ' active' : '');
+    document.getElementById('ref-a4').className = 'ref-btn' + (mode === 'a4' ? ' active' : '');
     resetAll();
 }
 
-fileInput.addEventListener('change', (e) => {
-    // ファイル選択後に振動を許可させるためのトリガー
-    vibrate('medium');
+fileInput.onchange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
-        img = new Image();
+    reader.onload = (ev) => {
         img.onload = () => {
             const scale = window.innerWidth / img.width;
             canvas.width = window.innerWidth;
             canvas.height = img.height * scale;
             resetData();
             render();
-            instruction.innerText = `【基準】${currentRefMode==='card'?'カード':'A4用紙'}の長辺をタップ`;
+            instruction.innerText = `【基準】${currentRefMode==='card'?'カード':'A4用紙'}の角をタップ`;
         };
-        img.src = event.target.result;
+        img.src = ev.target.result;
     };
     reader.readAsDataURL(file);
-});
+};
 
 function undo() {
     vibrate('light');
     if (points.length > 0) points.pop();
-    else if (measurements.length > 0) { measurements.pop(); updateList(); updateInstruction(); }
-    else if (ratio !== 0) { ratio = 0; instruction.innerText = "【基準設定】長辺をタップ"; resultDiv.innerText = "基準リセット"; }
-    render();
+    else if (measurements.length > 0) measurements.pop();
+    else ratio = 0;
+    updateList(); render();
 }
 
 function render() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (img.src) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    if (points.length > 0) {
-        ctx.strokeStyle = ratio === 0 ? "#FF3B30" : "#0A84FF";
-        ctx.fillStyle = ctx.strokeStyle;
-        ctx.lineWidth = 3;
-        points.forEach((p, i) => {
-            ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2); ctx.fill();
-            if (i === 1) { ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y); ctx.lineTo(points[1].x, points[1].y); ctx.stroke(); }
-        });
-    }
+    ctx.lineWidth = 3;
+    points.forEach((p, i) => {
+        ctx.fillStyle = ratio === 0 ? "#FF3B30" : "#0A84FF";
+        ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2); ctx.fill();
+        if (i === 1) {
+            ctx.strokeStyle = ctx.fillStyle;
+            ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y); ctx.lineTo(points[1].x, points[1].y); ctx.stroke();
+        }
+    });
     if (isPressing && img.src) drawLoupe();
 }
 
 function drawLoupe() {
-    const lX = currentPos.x; const lY = currentPos.y; const offsetY = 90;
+    const lX = currentPos.x, lY = currentPos.y, off = 90;
     ctx.save();
-    ctx.beginPath(); ctx.arc(lX, lY - offsetY, LOUPE_SIZE / 2, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(lX, lY - off, LOUPE_SIZE/2, 0, Math.PI*2);
     ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke(); ctx.clip();
-    const sSize = LOUPE_SIZE / ZOOM_LEVEL;
-    ctx.drawImage(canvas, lX - sSize / 2, lY - sSize / 2, sSize, sSize, lX - LOUPE_SIZE / 2, lY - offsetY - LOUPE_SIZE / 2, LOUPE_SIZE, LOUPE_SIZE);
+    const s = LOUPE_SIZE / ZOOM_LEVEL;
+    ctx.drawImage(canvas, lX-s/2, lY-s/2, s, s, lX-LOUPE_SIZE/2, lY-off-LOUPE_SIZE/2, LOUPE_SIZE, LOUPE_SIZE);
     ctx.restore();
-    ctx.beginPath(); ctx.strokeStyle = "rgba(255,255,255,0.8)"; ctx.lineWidth = 1;
-    ctx.moveTo(lX, lY - offsetY - 10); ctx.lineTo(lX, lY - offsetY + 10);
-    ctx.moveTo(lX - 10, lY - offsetY); ctx.lineTo(lX + 10, lY - offsetY); ctx.stroke();
+    ctx.beginPath(); ctx.strokeStyle = "#0A84FF"; ctx.moveTo(lX, lY-off-15); ctx.lineTo(lX, lY-off+15); ctx.moveTo(lX-15, lY-off); ctx.lineTo(lX+15, lY-off); ctx.stroke();
 }
 
 const handleEnd = () => {
     if (!isPressing) return;
     isPressing = false;
     if (img.src) {
-        points.push({ x: currentPos.x, y: currentPos.y });
-        if (points.length === 1) {
-            vibrate('light'); // 1点目
-        }
+        // スナップ適用
+        const snapped = getSnappedPoint(currentPos.x, currentPos.y);
+        points.push(snapped);
+        vibrate('light');
+
         if (points.length === 2) {
             const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
             if (ratio === 0) {
-                vibrate('success'); // 基準完了
                 ratio = REF_VALUES[currentRefMode] / dist;
-                resultDiv.innerText = "基準完了";
-                updateInstruction();
-                setTimeout(() => { points = []; render(); }, 600);
+                vibrate('success');
+                setTimeout(() => { points = []; render(); instruction.innerText = `【計測】${labels[0]}`; }, 600);
             } else {
-                vibrate('medium'); // 計測完了
-                const cm = parseFloat(((dist * ratio) / 10).toFixed(1));
-                measurements.push(cm);
+                measurements.push(parseFloat(((dist * ratio) / 10).toFixed(1)));
                 updateList();
-                if (measurements.length < 3) { updateInstruction(); setTimeout(() => { points = []; render(); }, 400); }
-                else { 
-                    vibrate('success');
-                    instruction.innerText = "計測完了"; resultDiv.innerText = "FINISH"; 
+                if (measurements.length < 3) {
+                    instruction.innerText = `【計測】${labels[measurements.length]}`;
+                    setTimeout(() => { points = []; render(); }, 400);
+                } else {
+                    instruction.innerText = "全計測完了"; vibrate('success');
                 }
             }
         }
@@ -211,52 +184,33 @@ const handleEnd = () => {
     render();
 };
 
-function updateInstruction() {
-    if (measurements.length < 3) instruction.innerText = `【計測】${labels[measurements.length]}`;
-}
-
 function updateList() {
     const ids = ["val-w", "val-d", "val-h"];
     let total = 0;
-    ids.forEach(id => document.getElementById(id).innerText = "-");
-    measurements.forEach((m, i) => {
-        document.getElementById(ids[i]).innerText = m + "cm";
-        total += m;
+    ids.forEach((id, i) => {
+        const val = measurements[i] || "-";
+        document.getElementById(id).innerText = val + (val === "-" ? "" : "cm");
+        if (val !== "-") total += val;
     });
     document.getElementById("val-total").innerText = measurements.length === 3 ? total.toFixed(1) + "cm" : "-";
 }
 
-function resetData() {
-    ratio = 0; points = []; measurements = [];
-    updateList();
-    resultDiv.innerText = "READY";
-}
-
-function resetAll() { 
-    vibrate('medium');
-    resetData(); render(); 
-    instruction.innerText = `【基準】${currentRefMode==='card'?'カード':'A4用紙'}の長辺をタップ`; 
-}
+function resetData() { ratio = 0; points = []; measurements = []; updateList(); resultDiv.innerText = "READY"; }
+function resetAll() { vibrate('light'); resetData(); render(); instruction.innerText = "角をタップしてください"; }
 
 function updatePos(e) {
     const rect = canvas.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    currentPos.x = clientX - rect.left; currentPos.y = clientY - rect.top;
+    const cX = e.touches ? e.touches[0].clientX : e.clientX;
+    const cY = e.touches ? e.touches[0].clientY : e.clientY;
+    currentPos.x = cX - rect.left; currentPos.y = cY - rect.top;
 }
 
-canvas.addEventListener('touchstart', (e) => { 
-    if(!img.src) return; 
-    e.preventDefault(); 
-    isPressing = true; 
-    updatePos(e); 
-    render(); 
-});
+canvas.addEventListener('touchstart', (e) => { if(!img.src) return; e.preventDefault(); isPressing = true; updatePos(e); render(); });
 canvas.addEventListener('touchmove', (e) => { if(!img.src) return; e.preventDefault(); updatePos(e); render(); });
 canvas.addEventListener('touchend', (e) => { if(!img.src) return; e.preventDefault(); handleEnd(); });
-canvas.addEventListener('mousedown', (e) => { if(!img.src) return; isPressing = true; updatePos(e); render(); });
-canvas.addEventListener('mousemove', (e) => { if(isPressing){ updatePos(e); render(); }});
-canvas.addEventListener('mouseup', handleEnd);
+canvas.onmousedown = (e) => { if(!img.src) return; isPressing = true; updatePos(e); render(); };
+canvas.onmousemove = (e) => { if(isPressing){ updatePos(e); render(); } };
+canvas.onmouseup = handleEnd;
 </script>
 </body>
 </html>
