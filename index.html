@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MeasureBox Pro - Undo機能付</title>
+    <title>MeasureBox Pro - Fixed</title>
     <style>
         body { 
             font-family: -apple-system, sans-serif;
@@ -12,8 +12,8 @@
         }
         #ui-layer { 
             position: fixed; top: 0; width: 100%; 
-            background: rgba(28,28,30,0.9); backdrop-filter: blur(20px);
-            padding: 15px 0; z-index: 100;
+            background: rgba(28,28,30,0.95); backdrop-filter: blur(20px);
+            padding: 15px 0; z-index: 1000;
         }
         #instruction { font-size: 13px; color: #0A84FF; margin-bottom: 5px; font-weight: bold; letter-spacing: 1px; }
         #result { font-size: 24px; font-weight: bold; color: #FF9F0A; min-height: 30px; }
@@ -30,15 +30,17 @@
         .measure-item { display: flex; flex-direction: column; }
         .measure-val { font-size: 18px; font-weight: bold; color: #fff; }
 
-        .btn-group { margin-top: 10px; }
+        .btn-group { margin-top: 10px; display: flex; justify-content: center; gap: 8px; }
         .btn { 
-            background: #3A3A3C; color: #fff; border: none; padding: 10px 18px; 
-            border-radius: 12px; font-weight: 600; margin: 0 5px; font-size: 13px;
+            background: #3A3A3C; color: #fff; border: none; padding: 12px 18px; 
+            border-radius: 12px; font-weight: 600; font-size: 14px;
+            -webkit-appearance: none;
         }
         .btn-primary { background: #0A84FF; }
-        .btn-undo { background: #E0E0E0; color: #000; } /* 戻るボタンを目立たせる */
-        #canvas-container { position: relative; margin-top: 190px; touch-action: none; }
-        canvas { max-width: 100%; }
+        .btn-undo { background: #E0E0E0; color: #000; }
+        
+        #canvas-container { position: relative; margin-top: 200px; touch-action: none; width: 100%; }
+        canvas { max-width: 100%; display: block; margin: 0 auto; }
     </style>
 </head>
 <body>
@@ -55,8 +57,11 @@
     </div>
 
     <div class="btn-group">
-        <input type="file" id="file-input" accept="image/*" style="display:none">
-        <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">写真選択</button>
+        <div style="position:relative;">
+            <button class="btn btn-primary">写真を選択</button>
+            <input type="file" id="file-input" accept="image/*" 
+                   style="position:absolute; left:0; top:0; width:100%; height:100%; opacity:0; cursor:pointer;">
+        </div>
         <button class="btn btn-undo" onclick="undo()">戻る</button>
         <button class="btn" onclick="resetAll()">リセット</button>
     </div>
@@ -77,7 +82,6 @@ let img = new Image();
 let points = [];
 let ratio = 0; 
 const CARD_MM = 85.6;
-
 let measurements = [];
 const labels = ["幅 (Width)", "奥行 (Depth)", "高さ (Height)"];
 
@@ -86,10 +90,13 @@ let currentPos = { x: 0, y: 0 };
 const LOUPE_SIZE = 130;
 const ZOOM_LEVEL = 3;
 
-fileInput.onchange = (e) => {
+// ファイル読み込み処理
+fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
+    if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
+        img = new Image();
         img.onload = () => {
             const scale = window.innerWidth / img.width;
             canvas.width = window.innerWidth;
@@ -101,25 +108,19 @@ fileInput.onchange = (e) => {
         img.src = event.target.result;
     };
     reader.readAsDataURL(file);
-};
+});
 
-// 戻る（Undo）機能
 function undo() {
     if (points.length > 0) {
-        // 現在タップ中の1点目を消す
         points.pop();
     } else if (measurements.length > 0) {
-        // すでに計測済みの直前の辺を消し、その時の2点を復活させてから1点消す（実質その辺の計測前に戻る）
         measurements.pop();
         updateList();
         updateInstruction();
-        resultDiv.innerText = "戻りました";
     } else if (ratio !== 0) {
-        // 基準設定をやり直す
         ratio = 0;
-        points = [];
         instruction.innerText = "【基準設定】カードの長い辺をタップ";
-        resultDiv.innerText = "基準をリセットしました";
+        resultDiv.innerText = "基準リセット";
     }
     render();
 }
@@ -139,20 +140,16 @@ function render() {
             }
         });
     }
-
     if (isPressing && img.src) drawLoupe();
 }
 
 function drawLoupe() {
-    const lX = currentPos.x;
-    const lY = currentPos.y;
+    const lX = currentPos.x; const lY = currentPos.y;
     const offsetY = 90;
     ctx.save();
     ctx.beginPath();
     ctx.arc(lX, lY - offsetY, LOUPE_SIZE / 2, 0, Math.PI * 2);
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 3;
-    ctx.stroke();
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke();
     ctx.clip();
     const sSize = LOUPE_SIZE / ZOOM_LEVEL;
     ctx.drawImage(canvas, lX - sSize / 2, lY - sSize / 2, sSize, sSize, lX - LOUPE_SIZE / 2, lY - offsetY - LOUPE_SIZE / 2, LOUPE_SIZE, LOUPE_SIZE);
@@ -167,12 +164,11 @@ const handleEnd = () => {
     isPressing = false;
     if (img.src) {
         points.push({ x: currentPos.x, y: currentPos.y });
-        
         if (points.length === 2) {
             const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
             if (ratio === 0) {
                 ratio = CARD_MM / dist;
-                resultDiv.innerText = "基準OK";
+                resultDiv.innerText = "基準完了";
                 updateInstruction();
                 setTimeout(() => { points = []; render(); }, 600);
             } else {
@@ -183,8 +179,8 @@ const handleEnd = () => {
                     updateInstruction();
                     setTimeout(() => { points = []; render(); }, 400);
                 } else {
-                    instruction.innerText = "全計測完了";
-                    resultDiv.innerText = "COMPLETED";
+                    instruction.innerText = "計測完了";
+                    resultDiv.innerText = "FINISH";
                 }
             }
         }
@@ -193,30 +189,42 @@ const handleEnd = () => {
 };
 
 function updateInstruction() {
-    if (measurements.length < 3) {
-        instruction.innerText = `【計測】${labels[measurements.length]} をタップ`;
-    }
+    if (measurements.length < 3) instruction.innerText = `【計測】${labels[measurements.length]}`;
 }
 
 function updateList() {
     const ids = ["val-w", "val-d", "val-h"];
     let total = 0;
-    
-    // 一旦全部クリア
     ids.forEach(id => document.getElementById(id).innerText = "-");
-    
     measurements.forEach((m, i) => {
         document.getElementById(ids[i]).innerText = m + "cm";
         total += m;
     });
-    
-    const totalEl = document.getElementById("val-total");
-    if (measurements.length === 3) {
-        totalEl.innerText = total.toFixed(1) + "cm";
-    } else {
-        totalEl.innerText = "-";
-    }
+    document.getElementById("val-total").innerText = measurements.length === 3 ? total.toFixed(1) + "cm" : "-";
 }
 
 function resetData() {
-    ratio =
+    ratio = 0; points = []; measurements = [];
+    updateList();
+    resultDiv.innerText = "READY";
+}
+
+function resetAll() { resetData(); render(); instruction.innerText = "【基準設定】カードの長い辺をタップ"; }
+
+function updatePos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    currentPos.x = clientX - rect.left;
+    currentPos.y = clientY - rect.top;
+}
+
+canvas.addEventListener('touchstart', (e) => { if(!img.src) return; e.preventDefault(); isPressing = true; updatePos(e); render(); });
+canvas.addEventListener('touchmove', (e) => { if(!img.src) return; e.preventDefault(); updatePos(e); render(); });
+canvas.addEventListener('touchend', (e) => { if(!img.src) return; e.preventDefault(); handleEnd(); });
+canvas.addEventListener('mousedown', (e) => { if(!img.src) return; isPressing = true; updatePos(e); render(); });
+canvas.addEventListener('mousemove', (e) => { if(isPressing){ updatePos(e); render(); }});
+canvas.addEventListener('mouseup', handleEnd);
+</script>
+</body>
+</html>
