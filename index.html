@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MeasureBox Pro - Reliable Photo</title>
+    <title>MeasureBox Pro - Smooth Snap</title>
     <style>
         body { font-family: -apple-system, sans-serif; margin: 0; background: #000; color: #fff; text-align: center; overflow: hidden; }
         #ui-layer { position: fixed; top: 0; width: 100%; background: rgba(28,28,30,0.95); backdrop-filter: blur(20px); padding: 15px 0; z-index: 2000; }
@@ -69,46 +69,40 @@ let currentPos = { x: 0, y: 0 };
 const LOUPE_SIZE = 130;
 const ZOOM_LEVEL = 3;
 
-// --- 写真選択の起動を確実にする関数 ---
 function openFilePicker() {
-    vibrate('light');
     fileInput.click();
 }
 
-function vibrate(type) {
-    if (!("vibrate" in navigator)) return;
-    try {
-        if (type === 'light') navigator.vibrate(15);
-        else if (type === 'medium') navigator.vibrate(40);
-        else if (type === 'success') navigator.vibrate([40, 60, 40]);
-    } catch(e) {}
-}
-
+// 改善版スナップ: 輝度勾配に基づきつつ、過剰なジャンプを抑制
 function getSnappedPoint(rawX, rawY) {
-    const range = 10; 
+    const range = 8; // 探索範囲を少し狭めて誤爆を防ぐ
     const imageData = ctx.getImageData(rawX - range, rawY - range, range * 2, range * 2);
     const data = imageData.data;
-    let maxGrad = -1;
+    let maxContrast = -1;
     let snapX = rawX, snapY = rawY;
 
     for (let y = 1; y < range * 2 - 1; y++) {
         for (let x = 1; x < range * 2 - 1; x++) {
-            const idx = (y * range * 2 + x) * 4;
-            const gradX = Math.abs(data[idx+4] - data[idx-4]);
-            const gradY = Math.abs(data[idx + (range*2*4)] - data[idx - (range*2*4)]);
-            const grad = gradX + gradY;
-            if (grad > maxGrad) {
-                maxGrad = grad;
+            const idx = (y * (range * 2) + x) * 4;
+            // 輝度計算
+            const lum = (data[idx]*299 + data[idx+1]*587 + data[idx+2]*114) / 1000;
+            // 周囲4画素との差の合計
+            const diff = 
+                Math.abs(lum - (data[idx-4]*299 + data[idx-3]*587 + data[idx-2]*114)/1000) +
+                Math.abs(lum - (data[idx+4]*299 + data[idx+5]*587 + data[idx+6]*114)/1000);
+            
+            if (diff > maxContrast) {
+                maxContrast = diff;
                 snapX = (rawX - range) + x;
                 snapY = (rawY - range) + y;
             }
         }
     }
-    return { x: snapX, y: snapY };
+    // コントラストが弱すぎる場合は補正しない（誤作動防止）
+    return maxContrast > 30 ? { x: snapX, y: snapY } : { x: rawX, y: rawY };
 }
 
 function setRef(mode) {
-    vibrate('light');
     currentRefMode = mode;
     document.getElementById('ref-card').className = 'ref-btn' + (mode === 'card' ? ' active' : '');
     document.getElementById('ref-a4').className = 'ref-btn' + (mode === 'a4' ? ' active' : '');
@@ -135,7 +129,6 @@ fileInput.addEventListener('change', (e) => {
 });
 
 function undo() {
-    vibrate('light');
     if (points.length > 0) points.pop();
     else if (measurements.length > 0) {
         measurements.pop();
@@ -180,13 +173,11 @@ const handleEnd = () => {
     if (img.src) {
         const snapped = getSnappedPoint(currentPos.x, currentPos.y);
         points.push(snapped);
-        vibrate('light');
 
         if (points.length === 2) {
             const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
             if (ratio === 0) {
                 ratio = REF_VALUES[currentRefMode] / dist;
-                vibrate('success');
                 setTimeout(() => { points = []; render(); updateInstruction(); }, 600);
             } else {
                 measurements.push(parseFloat(((dist * ratio) / 10).toFixed(1)));
@@ -195,7 +186,7 @@ const handleEnd = () => {
                     updateInstruction();
                     setTimeout(() => { points = []; render(); }, 400);
                 } else {
-                    instruction.innerText = "全計測完了"; vibrate('success');
+                    instruction.innerText = "全計測完了";
                 }
             }
         }
@@ -223,7 +214,7 @@ function updateList() {
 }
 
 function resetData() { ratio = 0; points = []; measurements = []; updateList(); }
-function resetAll() { vibrate('medium'); resetData(); render(); updateInstruction(); }
+function resetAll() { resetData(); render(); updateInstruction(); }
 
 function updatePos(e) {
     const rect = canvas.getBoundingClientRect();
