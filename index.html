@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MeasureBox Pro - Multi Ref</title>
+    <title>MeasureBox Pro - Haptic</title>
     <style>
         body { 
             font-family: -apple-system, sans-serif;
@@ -18,17 +18,12 @@
         #instruction { font-size: 13px; color: #0A84FF; margin-bottom: 5px; font-weight: bold; letter-spacing: 1px; }
         #result { font-size: 24px; font-weight: bold; color: #FF9F0A; min-height: 30px; }
         
-        /* 基準物選択スイッチ */
-        .ref-selector {
-            display: flex; justify-content: center; gap: 5px; margin-bottom: 10px;
-        }
+        .ref-selector { display: flex; justify-content: center; gap: 5px; margin-bottom: 10px; }
         .ref-btn {
             background: #2C2C2E; color: #8E8E93; border: 1px solid #3A3A3C;
             padding: 5px 12px; border-radius: 8px; font-size: 12px; cursor: pointer;
         }
-        .ref-btn.active {
-            background: #48484A; color: #FFF; border-color: #636366;
-        }
+        .ref-btn.active { background: #48484A; color: #FFF; border-color: #636366; }
 
         #measure-list {
             background: rgba(44,44,46,0.8);
@@ -42,6 +37,7 @@
         .btn { 
             background: #3A3A3C; color: #fff; border: none; padding: 12px 18px; 
             border-radius: 12px; font-weight: 600; font-size: 14px;
+            touch-action: manipulation;
         }
         .btn-primary { background: #0A84FF; }
         .btn-undo { background: #E0E0E0; color: #000; }
@@ -54,21 +50,17 @@
 
 <div id="ui-layer">
     <div id="instruction">写真を選択してください</div>
-    
     <div class="ref-selector">
-        <div id="ref-card" class="ref-btn active" onclick="setRef('card')">💳 カード (85.6mm)</div>
-        <div id="ref-a4" class="ref-btn" onclick="setRef('a4')">📄 A4用紙 (297mm)</div>
+        <div id="ref-card" class="ref-btn active" onclick="setRef('card')">💳 カード</div>
+        <div id="ref-a4" class="ref-btn" onclick="setRef('a4')">📄 A4用紙</div>
     </div>
-
     <div id="result">READY</div>
-    
     <div id="measure-list">
         <div class="measure-item"><span>幅</span><span id="val-w" class="measure-val">-</span></div>
         <div class="measure-item"><span>奥行</span><span id="val-d" class="measure-val">-</span></div>
         <div class="measure-item"><span>高さ</span><span id="val-h" class="measure-val">-</span></div>
         <div class="measure-item"><span>合計</span><span id="val-total" class="measure-val" style="color:#FF9F0A">-</span></div>
     </div>
-
     <div class="btn-group">
         <div style="position:relative;">
             <button class="btn btn-primary">写真選択</button>
@@ -95,7 +87,6 @@ let points = [];
 let ratio = 0; 
 let currentRefMode = 'card';
 const REF_VALUES = { 'card': 85.6, 'a4': 297 };
-
 let measurements = [];
 const labels = ["幅 (Width)", "奥行 (Depth)", "高さ (Height)"];
 let isPressing = false;
@@ -103,10 +94,18 @@ let currentPos = { x: 0, y: 0 };
 const LOUPE_SIZE = 130;
 const ZOOM_LEVEL = 3;
 
-// 基準物切り替え
+// --- 振動機能 ---
+function vibrate(type) {
+    if (!window.navigator.vibrate) return;
+    if (type === 'light') window.navigator.vibrate(10);     // 短くピッ
+    if (type === 'medium') window.navigator.vibrate(30);    // 少しブルッ
+    if (type === 'success') window.navigator.vibrate([30, 50, 30]); // タタンッ
+}
+
 function setRef(mode) {
+    vibrate('light');
     if (ratio !== 0 || measurements.length > 0) {
-        if (!confirm("計測をリセットして基準物を変更しますか？")) return;
+        if (!confirm("リセットして基準物を変更しますか？")) return;
     }
     currentRefMode = mode;
     document.getElementById('ref-card').classList.toggle('active', mode === 'card');
@@ -115,6 +114,7 @@ function setRef(mode) {
 }
 
 fileInput.addEventListener('change', (e) => {
+    vibrate('medium');
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
@@ -134,6 +134,7 @@ fileInput.addEventListener('change', (e) => {
 });
 
 function undo() {
+    vibrate('light');
     if (points.length > 0) points.pop();
     else if (measurements.length > 0) { measurements.pop(); updateList(); updateInstruction(); }
     else if (ratio !== 0) { ratio = 0; instruction.innerText = "【基準設定】長辺をタップ"; resultDiv.innerText = "基準リセット"; }
@@ -172,20 +173,26 @@ const handleEnd = () => {
     if (!isPressing) return;
     isPressing = false;
     if (img.src) {
+        vibrate('light');
         points.push({ x: currentPos.x, y: currentPos.y });
         if (points.length === 2) {
             const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
             if (ratio === 0) {
+                vibrate('success');
                 ratio = REF_VALUES[currentRefMode] / dist;
                 resultDiv.innerText = "基準完了";
                 updateInstruction();
                 setTimeout(() => { points = []; render(); }, 600);
             } else {
+                vibrate('medium');
                 const cm = parseFloat(((dist * ratio) / 10).toFixed(1));
                 measurements.push(cm);
                 updateList();
                 if (measurements.length < 3) { updateInstruction(); setTimeout(() => { points = []; render(); }, 400); }
-                else { instruction.innerText = "計測完了"; resultDiv.innerText = "FINISH"; }
+                else { 
+                    vibrate('success');
+                    instruction.innerText = "計測完了"; resultDiv.innerText = "FINISH"; 
+                }
             }
         }
     }
@@ -214,6 +221,7 @@ function resetData() {
 }
 
 function resetAll() { 
+    vibrate('medium');
     resetData(); render(); 
     instruction.innerText = `【基準】${currentRefMode==='card'?'カード':'A4用紙'}の長辺をタップ`; 
 }
