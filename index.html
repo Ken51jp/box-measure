@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MeasureBox Pro - AI Snap & Total</title>
+    <title>MeasureBox Pro - UI Fixed</title>
     <style>
         body { font-family: -apple-system, sans-serif; margin: 0; background: #000; color: #fff; text-align: center; overflow: hidden; }
-        #ui-layer { position: fixed; top: 0; width: 100%; background: rgba(28,28,30,0.95); backdrop-filter: blur(20px); padding: 15px 0; z-index: 1000; }
+        #ui-layer { position: fixed; top: 0; width: 100%; background: rgba(28,28,30,0.95); backdrop-filter: blur(20px); padding: 15px 0; z-index: 2000; }
         #instruction { font-size: 13px; color: #0A84FF; margin-bottom: 5px; font-weight: bold; letter-spacing: 1px; }
         #result { font-size: 28px; font-weight: bold; color: #FF9F0A; min-height: 35px; }
         
@@ -18,11 +18,14 @@
         .measure-item { display: flex; flex-direction: column; }
         .measure-val { font-size: 18px; font-weight: bold; color: #fff; }
 
-        .btn-group { display: flex; justify-content: center; gap: 8px; }
-        .btn { background: #3A3A3C; color: #fff; border: none; padding: 12px 18px; border-radius: 12px; font-weight: 600; font-size: 14px; touch-action: manipulation; }
-        .btn-primary { background: #0A84FF; }
+        .btn-group { display: flex; justify-content: center; gap: 8px; margin-top: 5px; }
+        .btn { background: #3A3A3C; color: #fff; border: none; padding: 12px 18px; border-radius: 12px; font-weight: 600; font-size: 14px; touch-action: manipulation; position: relative; }
+        .btn-primary { background: #0A84FF; overflow: hidden; }
         
-        #canvas-container { position: relative; margin-top: 240px; touch-action: none; width: 100%; }
+        /* ファイル入力をボタン全体に被せる */
+        #file-input { position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10; }
+        
+        #canvas-container { position: relative; margin-top: 240px; touch-action: none; width: 100%; z-index: 100; }
         canvas { max-width: 100%; display: block; margin: 0 auto; }
     </style>
 </head>
@@ -41,7 +44,10 @@
         <div class="measure-item"><span>高さ(H)</span><span id="val-h" class="measure-val">-</span></div>
     </div>
     <div class="btn-group">
-        <div style="position:relative;"><button class="btn btn-primary" onclick="vibrate('light')">写真選択</button><input type="file" id="file-input" accept="image/*" style="position:absolute; left:0; top:0; width:100%; height:100%; opacity:0;"></div>
+        <button class="btn btn-primary">
+            写真を選択
+            <input type="file" id="file-input" accept="image/*">
+        </button>
         <button class="btn" onclick="undo()">戻る</button>
         <button class="btn" onclick="resetAll()">リセット</button>
     </div>
@@ -77,7 +83,6 @@ function vibrate(type) {
     } catch(e) {}
 }
 
-// AIスナップ機能: 周辺のコントラスト変化が最も大きい点へ補正
 function getSnappedPoint(rawX, rawY) {
     const range = 10; 
     const imageData = ctx.getImageData(rawX - range, rawY - range, range * 2, range * 2);
@@ -88,8 +93,6 @@ function getSnappedPoint(rawX, rawY) {
     for (let y = 1; y < range * 2 - 1; y++) {
         for (let x = 1; x < range * 2 - 1; x++) {
             const idx = (y * range * 2 + x) * 4;
-            const b = (data[idx] + data[idx+1] + data[idx+2]) / 3;
-            // 簡易的な勾配（エッジ強度）計算
             const gradX = Math.abs(data[idx+4] - data[idx-4]);
             const gradY = Math.abs(data[idx + (range*2*4)] - data[idx - (range*2*4)]);
             const grad = gradX + gradY;
@@ -111,11 +114,13 @@ function setRef(mode) {
     resetAll();
 }
 
-fileInput.onchange = (e) => {
+fileInput.addEventListener('change', (e) => {
+    vibrate('medium');
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
+        img = new Image();
         img.onload = () => {
             const scale = window.innerWidth / img.width;
             canvas.width = window.innerWidth;
@@ -127,7 +132,7 @@ fileInput.onchange = (e) => {
         img.src = ev.target.result;
     };
     reader.readAsDataURL(file);
-};
+});
 
 function undo() {
     vibrate('light');
@@ -138,7 +143,7 @@ function undo() {
         updateInstruction();
     } else if (ratio !== 0) {
         ratio = 0;
-        instruction.innerText = "【基準設定】長辺をタップ";
+        updateInstruction();
     }
     render();
 }
@@ -161,28 +166,4 @@ function drawLoupe() {
     const lX = currentPos.x, lY = currentPos.y, off = 90;
     ctx.save();
     ctx.beginPath(); ctx.arc(lX, lY - off, LOUPE_SIZE/2, 0, Math.PI*2);
-    ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke(); ctx.clip();
-    const s = LOUPE_SIZE / ZOOM_LEVEL;
-    ctx.drawImage(canvas, lX-s/2, lY-s/2, s, s, lX-LOUPE_SIZE/2, lY-off-LOUPE_SIZE/2, LOUPE_SIZE, LOUPE_SIZE);
-    ctx.restore();
-    ctx.beginPath(); ctx.strokeStyle = "#0A84FF"; ctx.lineWidth = 2;
-    ctx.moveTo(lX, lY-off-15); ctx.lineTo(lX, lY-off+15); ctx.moveTo(lX-15, lY-off); ctx.lineTo(lX+15, lY-off); ctx.stroke();
-}
-
-const handleEnd = () => {
-    if (!isPressing) return;
-    isPressing = false;
-    if (img.src) {
-        // AIスナップ発動
-        const snapped = getSnappedPoint(currentPos.x, currentPos.y);
-        points.push(snapped);
-        vibrate('light');
-
-        if (points.length === 2) {
-            const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
-            if (ratio === 0) {
-                ratio = REF_VALUES[currentRefMode] / dist;
-                vibrate('success');
-                setTimeout(() => { points = []; render(); updateInstruction(); }, 600);
-            } else {
-                measurements.push(parseFloat(((dist * ratio)
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.
