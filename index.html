@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MeasureBox Pro - Haptic</title>
+    <title>MeasureBox Pro - Haptic Fixed</title>
     <style>
         body { 
             font-family: -apple-system, sans-serif;
@@ -63,7 +63,7 @@
     </div>
     <div class="btn-group">
         <div style="position:relative;">
-            <button class="btn btn-primary">写真選択</button>
+            <button class="btn btn-primary" onclick="vibrate('medium')">写真を選択</button>
             <input type="file" id="file-input" accept="image/*" style="position:absolute; left:0; top:0; width:100%; height:100%; opacity:0;">
         </div>
         <button class="btn btn-undo" onclick="undo()">戻る</button>
@@ -94,12 +94,21 @@ let currentPos = { x: 0, y: 0 };
 const LOUPE_SIZE = 130;
 const ZOOM_LEVEL = 3;
 
-// --- 振動機能 ---
+// --- 修正版 振動機能 ---
 function vibrate(type) {
-    if (!window.navigator.vibrate) return;
-    if (type === 'light') window.navigator.vibrate(10);     // 短くピッ
-    if (type === 'medium') window.navigator.vibrate(30);    // 少しブルッ
-    if (type === 'success') window.navigator.vibrate([30, 50, 30]); // タタンッ
+    if (!("vibrate" in navigator)) {
+        console.log("このブラウザは振動機能をサポートしていません");
+        return;
+    }
+    
+    // 一度何かのアクション（ボタンクリック）でこれが呼ばれると、以降の自動振動が許可されます
+    try {
+        if (type === 'light') navigator.vibrate(15);
+        else if (type === 'medium') navigator.vibrate(40);
+        else if (type === 'success') navigator.vibrate([40, 60, 40]);
+    } catch (e) {
+        console.error("振動エラー:", e);
+    }
 }
 
 function setRef(mode) {
@@ -114,6 +123,7 @@ function setRef(mode) {
 }
 
 fileInput.addEventListener('change', (e) => {
+    // ファイル選択後に振動を許可させるためのトリガー
     vibrate('medium');
     const file = e.target.files[0];
     if (!file) return;
@@ -173,18 +183,20 @@ const handleEnd = () => {
     if (!isPressing) return;
     isPressing = false;
     if (img.src) {
-        vibrate('light');
         points.push({ x: currentPos.x, y: currentPos.y });
+        if (points.length === 1) {
+            vibrate('light'); // 1点目
+        }
         if (points.length === 2) {
             const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
             if (ratio === 0) {
-                vibrate('success');
+                vibrate('success'); // 基準完了
                 ratio = REF_VALUES[currentRefMode] / dist;
                 resultDiv.innerText = "基準完了";
                 updateInstruction();
                 setTimeout(() => { points = []; render(); }, 600);
             } else {
-                vibrate('medium');
+                vibrate('medium'); // 計測完了
                 const cm = parseFloat(((dist * ratio) / 10).toFixed(1));
                 measurements.push(cm);
                 updateList();
@@ -233,7 +245,13 @@ function updatePos(e) {
     currentPos.x = clientX - rect.left; currentPos.y = clientY - rect.top;
 }
 
-canvas.addEventListener('touchstart', (e) => { if(!img.src) return; e.preventDefault(); isPressing = true; updatePos(e); render(); });
+canvas.addEventListener('touchstart', (e) => { 
+    if(!img.src) return; 
+    e.preventDefault(); 
+    isPressing = true; 
+    updatePos(e); 
+    render(); 
+});
 canvas.addEventListener('touchmove', (e) => { if(!img.src) return; e.preventDefault(); updatePos(e); render(); });
 canvas.addEventListener('touchend', (e) => { if(!img.src) return; e.preventDefault(); handleEnd(); });
 canvas.addEventListener('mousedown', (e) => { if(!img.src) return; isPressing = true; updatePos(e); render(); });
